@@ -1,0 +1,253 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  app: tars-upload-gateway-minio
+  template: tars-upload-gateway-minio-template
+message: TARS Upload Gateway
+metadata:
+  annotations:
+    description: |-
+      TARS Upload Gateway
+    iconClass: icon-go
+    openshift.io/display-name: TARS Upload Gateway
+    openshift.io/provider-display-name: GBM.
+    samples.operator.openshift.io/version: 4.5.9
+    tags: instant-app
+  labels:
+    samples.operator.openshift.io/managed: "true"
+  name: tars-upload-gateway-minio-template
+objects:
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: ${APPLICATION_NAME}
+    annotations:
+      template.openshift.io/expose-uri: http://{.spec.host}{.spec.path}
+  spec:
+    tls:
+      termination: edge
+    to:
+      kind: Service
+      name: ${APPLICATION_NAME}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${APPLICATION_NAME}
+  spec:
+    selector:
+      app: ${APPLICATION_NAME}
+    ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9090
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: ${APPLICATION_NAME}-s3
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}-sidecar
+    name: ${APPLICATION_NAME}-sidecar
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: ${APPLICATION_NAME}
+    labels:
+      app: ${APPLICATION_NAME}
+  spec:
+    replicas: ${{REPLICA_COUNT}}
+    selector:
+      matchLabels:
+        app: ${APPLICATION_NAME}
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+      spec:
+        containers:
+        - name: ${APPLICATION_NAME}
+          image: image-registry.openshift-image-registry.svc:5000/tars-images/${APPLICATION_NAME}:latest
+          env:
+          - name: APP_LISTEN_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: ${APPLICATION_NAME}
+                key: listen_port
+          - name: APP_TENANT_STRING
+            valueFrom:
+              configMapKeyRef:
+                name: ${APPLICATION_NAME}
+                key: tenant_string
+          - name: APP_UPLOAD_LIMIT
+            valueFrom:
+              configMapKeyRef:
+                name: ${APPLICATION_NAME}
+                key: upload_limit
+          - name: APP_ALLOW_INSECURE
+            valueFrom:
+              configMapKeyRef:
+                name: ${APPLICATION_NAME}
+                key: allow_insecure
+          - name: S3_LOCATION
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3
+                key: location
+          - name: S3_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3
+                key: endpoint
+          - name: S3_BUCKET
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3
+                key: bucket
+          - name: S3_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3
+                key: access_key
+          - name: S3_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3
+                key: secret_key
+          - name: S3_USE_SSL
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3
+                key: use_ssl
+          - name: S3_ALLOW_INSECURE
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3
+                key: allow_insecure
+          - name: S3_ARCHIVE_LOCATION
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3-archive
+                key: location
+          - name: S3_ARCHIVE_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3-archive
+                key: endpoint
+          - name: S3_ARCHIVE_BUCKET
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3-archive
+                key: bucket
+          - name: S3_ARCHIVE_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3-archive
+                key: access_key
+          - name: S3_ARCHIVE_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3-archive
+                key: secret_key
+          - name: S3_ARCHIVE_USE_SSL
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3-archive
+                key: use_ssl
+          - name: S3_ARCHIVE_ALLOW_INSECURE
+            valueFrom:
+              secretKeyRef:
+                name: ${APPLICATION_NAME}-s3-archive
+                key: allow_insecure
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 9080
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9080
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+            successThreshold: 1        
+          ports:
+          - containerPort: 9080
+          restartPolicy: Always
+        - name: ${APPLICATION_NAME}-sidecar
+          image: image-registry.openshift-image-registry.svc:5000/tars-images/tars-authx:latest
+          env:
+          - name: ALLOW_INSECURE
+            valueFrom:
+              configMapKeyRef:
+                name: ${APPLICATION_NAME}-sidecar
+                key: allow_insecure
+          - name: USER_INFO_URL
+            valueFrom:
+              configMapKeyRef:
+                name: ${APPLICATION_NAME}-sidecar
+                key: user_info_url
+          - name: RESOURCE_BASE
+            valueFrom:
+              configMapKeyRef:
+                name: ${APPLICATION_NAME}-sidecar
+                key: resource_base
+          ports:
+          - containerPort: 9090
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: ${APPLICATION_NAME}
+  spec:
+    runPolicy: Serial
+    source:
+      git:
+        ref: ${GIT_BRANCH}
+        uri: ${GIT_URI}
+      sourceSecret:
+        name: ${GIT_SECRET}
+      type: Git
+    strategy:
+      type: Docker
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${APPLICATION_NAME}:latest
+        namespace: tars-images
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: ${APPLICATION_NAME}
+    namespace: tars-images
+parameters:
+- description: The name of the Application
+  displayName: Application Name
+  name: APPLICATION_NAME
+  value: tars-upload-gateway-minio
+- description: URL to Git Repository
+  displayName: Git URI
+  name: GIT_URI
+  value: "ssh://git@github.com/MidhunRajeevan/s3-migration.git"
+- description: Git Branch
+  displayName: Git Branch
+  name: GIT_BRANCH
+  value: main
+- description: Git Secret
+  displayName: Git Secret
+  name: GIT_SECRET
+  value: tars-at-github
+- description: Number of POD Replicas
+  displayName: Replica Count
+  name: REPLICA_COUNT
+  value: "2"
