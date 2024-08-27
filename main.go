@@ -11,9 +11,10 @@ import (
 )
 
 func main() {
+	config.Initializesource()
+	config.InitializeTarget()
 	config.InitializeApp()
-	config.InitializeS3()
-	config.InitializeS3Archive()
+	config.InitializeDB()
 
 	if config.App.AllowInsecure {
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
@@ -22,6 +23,9 @@ func main() {
 	http.HandleFunc(fmt.Sprintf("/%s", config.App.TenantString), app.Uploads)
 	http.HandleFunc(fmt.Sprintf("/%s/", config.App.TenantString), app.Uploads)
 	http.HandleFunc("/", app.Index)
+
+	http.HandleFunc("/start", app.StartMigrationHandler)
+	http.HandleFunc("/stop", app.StopMigrationHandler)
 
 	url := fmt.Sprintf(":%d", config.App.ListenPort)
 	log.Println("Starting server at " + url)

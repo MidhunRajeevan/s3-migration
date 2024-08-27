@@ -67,4 +67,5 @@ func InitializeApp() {
 	if ok && (strings.ToLower(insecure) == "true") {
 		App.AllowInsecure = true
 	}
+
 }
